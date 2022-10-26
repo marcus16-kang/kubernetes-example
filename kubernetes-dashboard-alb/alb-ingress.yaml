@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: "alb-ingress-kubernetes-dashboard"
+  namespace: "ingress-nginx"
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/load-balancer-name: wsi-dashboard
+    alb.ingress.kubernetes.io/security-groups: <security group id>
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/healthcheck-path: /dashboard/
+  labels:
+    app: dashboard
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /dashboard/
+            pathType: Prefix
+            backend:
+              service:
+                name: "nginx-ingress-nginx-controller"
+                port:
+                  number: 80
