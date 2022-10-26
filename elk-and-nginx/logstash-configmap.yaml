@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstash-conf
+data:
+  access-log.conf: |
+    input {
+      beats {
+        port => "5044"
+      }
+    }
+
+    filter {
+      grok {
+        match => { "message" => "%{IPORHOST:remote_addr} - %{USER:remote_user} \[%{HTTPDATE:time_local}\] \"(?:%{WORD:verb} %{NOTSPACE:request}(?: HTTP/%{NUMBER:httpversion})?|%{DATA:rawrequest})\" %{NUMBER:status} (?:%{NUMBER:body_bytes_sent}|-) \"%{GREEDYDATA:referrer}\" \"%{GREEDYDATA:http_user_agent}\" \"%{DATA:forwarder}\"" }
+      }
+    }
+
+    output {
+      elasticsearch {
+        hosts => [ "https://<es hostname>:443" ]
+        index => "log"
+        user => "admin"
+        password => "Admin12345!"
+        ssl => true
+        template_name => "logstash"
+        ilm_enabled => false
+      }
+    }

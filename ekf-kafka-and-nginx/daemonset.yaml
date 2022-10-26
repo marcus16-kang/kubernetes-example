@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: logstash
+spec:
+  selector:
+    matchLabels:
+      app: logstash
+  template:
+    metadata:
+      labels:
+        app: logstash
+    spec:
+      containers:
+        - name: logstash
+          image: public.ecr.aws/docker/library/logstash:7.10.1
+          ports:
+            - containerPort: 5044
+          volumeMounts:
+            - name: logstash-conf
+              mountPath: /usr/share/logstash/pipeline
+      volumes:
+        - name: logstash-conf
+          configMap:
+            name: logstash-conf
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: logstash
+spec:
+  ports:
+    - port: 5044
+      name: logstash
+  selector:
+    app: logstash

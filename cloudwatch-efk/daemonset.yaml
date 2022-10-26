@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: fluentd
+  labels:
+    app: fluentd
+spec:
+  selector:
+    matchLabels:
+      app: fluentd
+  template:
+    metadata:
+      labels:
+        app: fluentd
+    spec:
+      serviceAccount: nginx-sa
+      containers:
+        - name: fluentd
+          image: fluent/fluentd-kubernetes-daemonset:v1.15.2-debian-cloudwatch-1.0
+          ports:
+            - containerPort: 24224
+          volumeMounts:
+            - name: fluentd-conf
+              mountPath: /fluentd/etc
+      volumes:
+        - name: fluentd-conf
+          configMap:
+            name: fluentd-conf

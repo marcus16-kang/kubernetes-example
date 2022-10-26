@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: filebeat-conf
+data:
+  conf.yaml: |
+    filebeat.inputs:
+      - type: log
+        paths:
+          - '/var/log/nginx/access.log'
+    output:
+      logstash:
+        hosts: [ "logstash:5044" ]

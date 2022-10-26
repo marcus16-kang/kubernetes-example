@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+  labels:
+    app: app
+spec:
+  replicas: 6
+  selector:
+    matchLabels:
+      app: app
+  template:
+    metadata:
+      labels:
+        app: app
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.14.2
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: "250m"
+            limits:
+              cpu: "500m"
+          volumeMounts:
+            - mountPath: /etc/nginx
+              readOnly: true
+              name: nginx-conf
+            - name: log
+              mountPath: /var/log
+        - name: app
+          image: <APPLICATION IMAGE>
+          imagePullPolicy: Always
+          env:
+            - name: REDIS_HOST
+              value: "<REDIS HOST>"
+            - name: REDIS_PORT
+              value: "<REDIS PORT>"
+        - name: fluent-bit
+          image: public.ecr.aws/aws-observability/aws-for-fluent-bit:2.28.3
+          volumeMounts:
+            - name: fluentbit-conf
+              mountPath: /fluent-bit/etc
+            - name: log
+              mountPath: /var/log
+      initContainers:
+        - name: init-create-nginx-dir
+          image: busybox:1.28
+          command:
+            - mkdir
+            - -p 
+            - /var/log/nginx
+          volumeMounts:
+            - name: log
+              mountPath: /var/log
+        - name: init-create-nginx-logs
+          image: busybox:1.28
+          command:
+            - touch
+            - /var/log/nginx/access.log
+            - /var/log/nginx/error.log
+          volumeMounts:
+            - name: log
+              mountPath: /var/log
+      volumes:
+        - name: nginx-conf
+          configMap:
+            name: nginx-conf
+        - name: fluentbit-conf
+          configMap:
+            name: fluentbit-conf
+        - name: log
+

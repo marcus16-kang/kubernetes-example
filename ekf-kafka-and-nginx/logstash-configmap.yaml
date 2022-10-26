@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstash-conf
+data:
+  access-log.conf: |
+    input {
+      kafka {
+        bootstrap_servers => "<broker uri>"
+        topics => ["nginx_logs"]
+        consumer_threads => 3
+      }
+    }
+
+    filter {
+      json {
+        source => "message"
+      }
+    }
+
+
+    output {
+      elasticsearch {
+        hosts => [ "<elasticsearch uri>" ]
+        index => "kafka"
+        template_name => "logstash"
+        ilm_enabled => false
+      }
+    }

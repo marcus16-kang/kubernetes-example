@@ -1,0 +1,153 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Transform: AWS::Serverless-2016-10-31
+
+Description: >
+  A SAM project for Kubernetes HPA scale out.
+
+Parameters:
+  FunctionSubnetIDs:
+    Description: Subnet IDs
+    Type: "List<AWS::EC2::Subnet::Id>"
+  FunctionSeurityGroupID:
+    Description: Security Group ID
+    Type: AWS::EC2::SecurityGroup::Id
+  EKSClusterName:
+    Description: EKS Cluster Name
+    Type: String
+  EKSHpaNamespaceName:
+    Description: "HPA's Namespace Name"
+    Type: String
+  EKSHpaDeploymentName:
+    Description: "HPA's Deployment Name"
+    Type: String
+
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    Timeout: 10
+
+Resources:
+  SNS:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: eks-horizontal-pod-autoscaler-sns-topic
+      FifoTopic: false
+      TopicName: eks-horizontal-pod-autoscaler-sns-topic
+  
+  SNSPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2008-10-17'
+        Id: __default_policy_ID
+        Statement:
+          - Sid: __default_statement_ID
+            Effect: Allow
+            Principal:
+              AWS: "*"
+            Action:
+              - SNS:GetTopicAttributes
+              - SNS:SetTopicAttributes
+              - SNS:AddPermission
+              - SNS:RemovePermission
+              - SNS:DeleteTopic
+              - SNS:Subscribe
+              - SNS:ListSubscriptionsByTopic
+              - SNS:Publish
+            Resource: !Sub
+              - arn:aws:sns:${REGION}:${ACCOUNT_ID}:eks-horizontal-pod-autoscaler-sns-topic
+              - { REGION: !Ref AWS::Region, ACCOUNT_ID: !Ref AWS::AccountId }
+            Condition:
+              StringEquals:
+                AWS:SourceOwner: !Ref AWS::AccountId
+          - Effect: Allow
+            Principal:
+              Service: cloudwatch.amazonaws.com
+            Action: SNS:Publish
+            Resource: !Sub
+              - arn:aws:sns:${REGION}:${ACCOUNT_ID}:eks-horizontal-pod-autoscaler-sns-topic
+              - { REGION: !Ref AWS::Region, ACCOUNT_ID: !Ref AWS::AccountId }
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub
+                  - arn:aws:cloudwatch:${REGION}:${ACCOUNT_ID}:alarm:*
+                  - { REGION: !Ref AWS::Region, ACCOUNT_ID: !Ref AWS::AccountId }
+      Topics:
+        - !Ref SNS
+  
+  FunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: '/aws/lambda/eks-horizontal-pod-autoscaler-function'
+
+  FunctionRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Description: An IAM Role for the lambda function to scale out pod using SNS.
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+      Path: /
+      Policies:
+        - PolicyName: eks-horizontal-pod-autoscaler-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'eks:*'
+                  - 'lambda:GetFunctionConfiguration'
+                Resource: '*'
+      RoleName: eks-horizontal-pod-autoscaler-role
+  
+  Function:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      Handler: app.lambda_handler
+      Runtime: python3.7
+      CodeUri: src/
+      FunctionName: eks-horizontal-pod-autoscaler-function
+      Description: A lambda function to scale out pod using SNS.
+      MemorySize: 128
+      Timeout: 10
+      Role: !GetAtt FunctionRole.Arn
+      Environment:
+        Variables:
+          REGION: !Ref AWS::Region
+          CLUSTER_NAME: !Ref EKSClusterName
+          HPA_NAMESPACE_NAME: !Ref EKSHpaNamespaceName
+          HPA_DEPLOYMENT_NAME: !Ref EKSHpaDeploymentName
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref FunctionSeurityGroupID
+        SubnetIds: !Ref FunctionSubnetIDs
+      Events:
+        SNSTrigger:
+          Type: SNS
+          Properties:
+            Topic: !Ref SNS
+      Architectures:
+        - x86_64
+
+Outputs:
+  Function:
+    Description: "Lambda Function ARN"
+    Value: !GetAtt Function.Arn
+  FunctionIamRole:
+    Description: "Lambda Function IAM Role Arn"
+    Value: !GetAtt FunctionRole.Arn
+  SNS:
+    Description: "SNS Topic ARN"
+    Value: !Ref SNS
