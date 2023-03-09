@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: Deployment
+metadata:
+  name: app_name
+  labels:
+    app: app_name
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: app_name
+  template:
+    metadata:
+      labels:
+        app: app_name
+    spec:
+      # serviceAccountName:
+      initContainers:
+        - name: init
+          image: public.ecr.aws/docker/library/busybox:1.36.0-musl
+          command: ['sh', '-c', 'mkdir -p /app/log/; touch /app/log/app.log; chown -R 1000:1000 /app/log/']
+          volumeMounts:
+            - name: log-storage
+              mountPath: /app/log
+      containers:
+        - name: app_name
+          image: IMAGE_NAME
+          # ports:
+          #   - containerPort: 80
+          # command:
+          #   - 
+          #   - 
+          # args:
+          #   -
+          #   -
+          # env:
+          #   - name: NAME1
+          #     value: VALUE1
+          volumeMounts:
+            - name: log-storage
+              mountPath: /app/log
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 30
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 60"]
+        - name: log
+          image: public.ecr.aws/docker/library/busybox:1.36.0-musl
+          command: [ "tail", "-f", "/app/log/app.log" ]
+          volumeMounts:
+            - name: log-storage
+              mountPath: /app/log
+        - name: fluent-bit
+          image: public.ecr.aws/aws-observability/aws-for-fluent-bit:2.31.6
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.name
+            - name: REGION
+              value: <REGION>
+            - name: LOG_GROUP_NAME
+              value: <LOG_GROUP_NAME>
+          volumeMounts:
+            - name: log-storage
+              readOnly: true
+              mountPath: /mnt/log
+            - name: fluent-bit-config
+              readOnly: true
+              mountPath: /fluent-bit/etc/
+      volumes:
+        - name: log-storage
+          emptyDir: {}
+        - name: fluent-bit-config
+          configMap:
+            name: app_name
+      # terminationGracePeriodSeconds: 
+      # tolerations:
+      #   - key: key1
+      #     value: value1
+      #     operator: Equal
+      #     effect: NoSchedule
+      # nodeSelector:
+      #   key1: value1

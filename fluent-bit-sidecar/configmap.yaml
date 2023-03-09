@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app_name
+data:
+  fluent-bit.conf: |
+    [INPUT]
+        Name              tail
+        Tag               app_name
+        Path              /mnt/log/app.log
+    
+    [OUTPUT]
+        Name  cloudwatch_logs
+        Match app_name
+        region ${REGION}
+        log_group_name ${LOG_GROUP_NAME}
+        log_stream_prefix ${POD_NAME}
+        auto_create_group true
+        log_retention_days 90
+    
+    # [FILTER]
+    #     Name  grep
+    #     Match *
+    #     Exclude log health
