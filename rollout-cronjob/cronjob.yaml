@@ -1,0 +1,60 @@
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: deployment-restart
+  namespace: <NAMESPACE NAME>
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: deployment-restart
+  namespace: <NAMESPACE NAME>
+rules:
+  - apiGroups: ["apps", "extensions"]
+    resources: ["deployments"]
+    resourceNames: ["<DEPLOYMENT 1 NAME>", "<DEPLOYMENT 2 NAME>", "<DEPLOYMENT 3 NAME>"]
+    verbs: ["get", "patch", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: deployment-restart
+  namespace: <NAMESPACE NAME>
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: deployment-restart
+subjects:
+  - kind: ServiceAccount
+    name: deployment-restart
+    namespace: <NAMESPACE NAME>
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: deployment-restart
+  namespace: <NAMESPACE NAME>
+spec:
+  concurrencyPolicy: Forbid
+  schedule: '*/5 * * * *'       # crontab expression
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 120
+      template:
+        spec:
+          serviceAccountName: deployment-restart
+          restartPolicy: Never
+          containers:
+            - name: kubectl
+              image: bitnami/kubectl
+              command:
+              - bash
+              - -c
+              - >-
+                kubectl rollout restart deployment/<DEPLOYMENT 1 NAME> &&
+                kubectl rollout restart deployment/<DEPLOYMENT 2 NAME> &&
+                kubectl rollout restart deployment/<DEPLOYMENT 3 NAME>
