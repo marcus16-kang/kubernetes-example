@@ -1,0 +1,123 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: failover
+  namespace: failover
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: failover
+  namespace: failover
+rules:
+  - apiGroups: ["apps", "extensions"]
+    resources: ["deployments"]
+    resourceNames: ["failover"] # deployment name
+    verbs: ["get", "patch", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: failover
+  namespace: failover
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: failover
+subjects:
+  - kind: ServiceAccount
+    name: failover
+    namespace: failover
+---
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: failover
+  namespace: failover
+spec:
+  podSelector:
+    matchLabels:
+      type: failover
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: failover
+  namespace: failover
+data:
+  healthcheck.sh: |
+    #!/bin/bash
+
+    count_200=0
+
+    for i in {1..5}
+    do
+      STATUS_CODE=$(curl --silent -o /dev/null -w "%{http_code}" http://failover:8080/)
+      echo $STATUS_CODE
+
+      if [ $STATUS_CODE -eq 200 ]; then
+        ((count_200++))
+      fi
+      sleep 0.5
+    done
+
+    if [ $count_200 -eq 0 ]; then
+      kubectl rollout restart deployment -n failover
+    fi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: failover
+  namespace: failover
+  labels:
+    app:
+    type: failover
+spec:
+  concurrencyPolicy: Forbid
+  schedule: '*/5 * * * *'
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 120
+      template:
+        metadata:
+          labels:
+            app:
+            type: failover
+        spec:
+          serviceAccountName: failover
+          restartPolicy: Never
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+          containers:
+            - name: failover
+              image: derjohn/kubectl-yq-jq:latest
+              command:  # override Dockerfile `ENTRYPOINT`
+                - bash
+                - /app/healthcheck.sh
+              volumeMounts:
+                - name: script
+                  mountPath: /app
+                  readOnly: true
+          volumes:
+            - name: script
+              configMap:
+                name: failover
+                items:
+                  - key: healthcheck.sh
+                    path: healthcheck.sh
+          tolerations:
+            - key: "type"         # taint key
+              value: "app"     # taint value
+              operator: "Equal"
+              effect: "NoSchedule"
+          nodeSelector:
+            type: app            # node label key and value
